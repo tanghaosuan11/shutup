@@ -1,36 +1,99 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wealth Proof — Anonymous ETH & ERC20 Holder Proofs
 
-## Getting Started
+Zero-knowledge circuits + Next.js frontend for proving ETH/ERC20 holdings without revealing address or balance.
 
-First, run the development server:
+## Project Structure
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+shut_up/
+├── circuits/
+│   ├── eth/           # ETH wealth proof (Noir circuit)
+│   └── erc20/         # ERC20 wealth proof (Noir circuit)
+├── app/               # Next.js frontend
+├── lib/               # TypeScript utilities (RPC, prover, etc)
+└── public/            # Circuit artifacts
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Quick Start
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 1. Compile Noir Circuits
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# Compile both ETH and ERC20 circuits
+pnpm compile:circuits
 
-## Learn More
+# Or individually
+pnpm compile:eth
+pnpm compile:erc20
 
-To learn more about Next.js, take a look at the following resources:
+# Manual compilation
+cd circuits/eth && nargo compile
+cd ../erc20 && nargo compile
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 2. Run Development Server
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm dev
+```
 
-## Deploy on Vercel
+Open [http://localhost:3000](http://localhost:3000) to see the app.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Available Scripts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `pnpm compile:circuits` — Compile ETH + ERC20 circuits
+- `pnpm compile:eth` — Compile ETH circuit only
+- `pnpm compile:erc20` — Compile ERC20 circuit only
+- `pnpm dev` — Start Next.js dev server (webpack mode)
+- `pnpm build` — Production build
+- `pnpm start` — Run production server
+- `pnpm lint` — Run ESLint
+
+## How It Works
+
+### Proof Generation Flow
+1. **Fetch Proof Data** — Call eth_getProof to get state/storage proofs from Ethereum
+2. **Generate Witness** — Use Noir to compute witness from proof data
+3. **Create Proof** — Barretenberg (bb.js) generates SNARK proof in browser
+4. **Verify Locally** — Verify proof on-chain or off-chain
+
+### Noir Circuits
+
+- **eth/src/main.nr** — Verifies state trie proof, decodes balance, checks threshold, signs with EIP-712
+- **erc20/src/main.nr** — Verifies state + storage trie proofs, decodes ERC20 balance, similar signing
+
+## Building Circuits
+
+After editing circuit code (`.nr` files), recompile:
+
+```bash
+# From project root
+pnpm compile:circuits
+
+# Artifacts are generated in:
+# - circuits/eth/target/wealth_proof_eth.json
+# - circuits/erc20/target/wealth_proof_erc20.json
+```
+
+## Testing
+
+```bash
+# Test ETH circuit
+cd circuits/eth && nargo test
+
+# Test ERC20 circuit
+cd circuits/erc20 && nargo test
+```
+
+## Dependencies
+
+- **@noir-lang/noir_js** — Noir witness generation
+- **@aztec/bb.js** — Barretenberg backend for proof generation
+- **ethers v6** — Wallet connection, RPC calls, signing
+- **noir-trie-proofs** — MPT verification utilities
+
+## References
+
+- [Noir Docs](https://docs.noir-lang.org/)
+- [Barretenberg](https://github.com/aztecprotocol/barretenberg)
+- [Ethereum MPT](https://eth.wiki/fundamentals/patricia-tree)
