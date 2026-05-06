@@ -3,12 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "next dev --webpack",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "compile:circuits": "cd circuits/eth && nargo compile && cd ../erc20 && nargo compile && cp ../eth/target/wealth_proof_eth.json ../../public/circuit.json && cp target/wealth_proof_erc20.json ../../public/circuit_erc20.json",
+    "compile:eth": "cd circuits/eth && nargo compile",
+    "compile:erc20": "cd circuits/erc20 && nargo compile"
   },
   "dependencies": {
+    "@aztec/bb.js": "^4.2.0",
+    "@ethereumjs/rlp": "^10.1.1",
+    "@noir-lang/noir_js": "^1.0.0-beta.20",
+    "@upstash/redis": "^1.37.0",
+    "@vercel/blob": "^2.3.3",
+    "ethers": "^6.16.0",
+    "html-to-image": "^1.11.13",
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"
@@ -20,6 +30,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "mini-css-extract-plugin": "^2.10.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1,0 +1,9 @@
+[package]
+name = "wealth_proof_erc20"
+type = "bin"
+authors = [""]
+compiler_version = ">=1.0.0"
+
+[dependencies]
+trie = { path = "../../../noir-trie-proofs/lib" }
+keccak = { tag = "v0.1.3", git = "https://github.com/noir-lang/keccak256" }
