@@ -39,6 +39,8 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000) to see the app.
 
+**Production Deployment:** https://shutup-omega.vercel.app
+
 ## Available Scripts
 
 - `pnpm compile:circuits` — Compile ETH + ERC20 circuits
