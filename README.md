@@ -89,13 +89,29 @@ cd circuits/erc20 && nargo test
 
 ## Dependencies
 
+### Runtime
 - **@noir-lang/noir_js** — Noir witness generation
 - **@aztec/bb.js** — Barretenberg backend for proof generation
 - **ethers v6** — Wallet connection, RPC calls, signing
-- **noir-trie-proofs** — MPT verification utilities
+
+### Circuit Compilation
+- **noir-trie-proofs** — Merkle Patricia Trie (MPT) verification utilities for Ethereum state proofs
+  - GitHub: https://github.com/tanghaosuan11/noir-trie-proofs
+  - Required for compiling ETH and ERC20 wealth proof circuits
+  - Provides utilities for RLP decoding and trie proof verification
+
+## Circuit Dependencies Setup
+
+The Noir circuits in `circuits/eth/` and `circuits/erc20/` depend on the [noir-trie-proofs](https://github.com/tanghaosuan11/noir-trie-proofs) library. This library provides:
+- RLP (Recursive Length Prefix) decoding for Ethereum data structures
+- Merkle Patricia Trie proof verification
+- State and storage proof validation
+
+Make sure the noir-trie-proofs library is accessible before compiling circuits. The circuits reference it through their `Nargo.toml` configuration.
 
 ## References
 
 - [Noir Docs](https://docs.noir-lang.org/)
 - [Barretenberg](https://github.com/aztecprotocol/barretenberg)
+- [noir-trie-proofs](https://github.com/tanghaosuan11/noir-trie-proofs) — Trie proof verification library
 - [Ethereum MPT](https://eth.wiki/fundamentals/patricia-tree)
