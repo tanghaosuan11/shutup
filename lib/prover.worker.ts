@@ -21,12 +21,11 @@ import {
   type WalletData,
   type ProofResult,
 } from "@/lib/prover";
-import type { CompiledCircuit } from "@noir-lang/types";
 
-async function loadCircuit(url: string): Promise<CompiledCircuit> {
+async function loadCircuit(url: string): Promise<any> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Failed to fetch ${url}: ${resp.status}`);
-  return resp.json() as Promise<CompiledCircuit>;
+  return resp.json() as Promise<any>;
 }
 
 self.onmessage = async (e: MessageEvent) => {
