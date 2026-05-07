@@ -5,7 +5,7 @@
 import dynamic from "next/dynamic";
 export default dynamic(() => Promise.resolve(ProofApp), { ssr: false });
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { parseEther, keccak256 } from "ethers";
 import { weiToEth, truncHex, formatAge, freshnessWarning } from "@/lib/utils";
 import { KNOWN_ERC20_TOKENS, type TokenInfo } from "@/lib/prover";
@@ -32,6 +32,8 @@ type GenPhase =
       userTag: string;
       userTagLabel: string;
       token?: TokenInfo; // undefined = ETH
+      shareUrl?: string; // uploaded share link
+      uploading?: boolean; // currently uploading
     }
   | { status: "error"; message: string };
 
@@ -62,6 +64,8 @@ function ProofApp() {
   const [threshold, setThreshold] = useState("1");
   const [userTagLabel, setUserTagLabel] = useState("");
   const [customRpcUrl, setCustomRpcUrl] = useState("");
+  const [customBlockNumber, setCustomBlockNumber] = useState("");
+  const [enableAutoUpload, setEnableAutoUpload] = useState(false);
   // "ETH" = native ETH; any other symbol = ERC20 token
   const [selectedToken, setSelectedToken] = useState<"ETH" | string>("ETH");
   const [genPhase, setGenPhase] = useState<GenPhase>({ status: "idle" });
@@ -94,13 +98,13 @@ function ProofApp() {
       if (isErc20) {
         const { fetchWalletDataERC20 } = await import("@/lib/prover");
         walletData = await fetchWalletDataERC20(
-          token, thresholdWei, userTagLabel, customRpcUrl || undefined,
+          token, thresholdWei, userTagLabel, customRpcUrl || undefined, customBlockNumber || undefined,
           (pct, msg) => setGenPhase({ status: "proving", pct, msg })
         );
       } else {
         const { fetchWalletData } = await import("@/lib/prover");
         walletData = await fetchWalletData(
-          thresholdWei, userTagLabel, customRpcUrl || undefined,
+          thresholdWei, userTagLabel, customRpcUrl || undefined, customBlockNumber || undefined,
           (pct, msg) => setGenPhase({ status: "proving", pct, msg })
         );
       }
@@ -121,7 +125,7 @@ function ProofApp() {
         setGenPhase({ status: "proving", pct: data.pct, msg: data.msg });
       } else if (data.type === "done") {
         const r = data.result;
-        setGenPhase({
+        const newPhase: Extract<GenPhase, { status: "done" }> = {
           status: "done",
           stateRoot: r.stateRoot,
           blockNumber: r.blockNumber,
@@ -136,8 +140,16 @@ function ProofApp() {
           userTag: r.userTag,
           userTagLabel: r.userTagLabel,
           token: r.token,
-        });
+        };
+        setGenPhase(newPhase);
         worker.terminate();
+
+        // Auto-upload if enabled
+        if (enableAutoUpload) {
+          // Call handleUpload after state update
+          // handleUpload will use the updated genPhase
+          setTimeout(() => handleUpload(), 0);
+        }
       } else if (data.type === "error") {
         setGenPhase({ status: "error", message: data.message });
         worker.terminate();
@@ -153,7 +165,7 @@ function ProofApp() {
       thresholdWei: thresholdWei.toString(),
       walletData,
     });
-  }, [threshold, userTagLabel, customRpcUrl, selectedToken]);
+  }, [threshold, userTagLabel, customRpcUrl, customBlockNumber, selectedToken]);
 
   const handleGenReset = () => {
     workerRef.current?.terminate();
@@ -184,6 +196,87 @@ function ProofApp() {
     a.download = `wealth-proof-${symbol}-${Date.now()}.proof`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleUpload = async () => {
+    if (genPhase.status !== "done") return;
+    
+    setGenPhase(prev => 
+      prev.status === "done" 
+        ? { ...prev, uploading: true }
+        : prev
+    );
+
+    try {
+      const { buildShareMetaForRegister } = await import("@/lib/share-meta");
+      const proofPayload = JSON.stringify({
+        plonkProof: genPhase.proofHex,
+        publicInputs: genPhase.publicInputs,
+        assetType: genPhase.token ? "erc20" : "eth",
+        token: genPhase.token ?? null,
+        stateRoot: genPhase.stateRoot,
+        blockNumber: genPhase.blockNumber,
+        blockTimestamp: genPhase.blockTimestamp,
+        chainId: genPhase.chainId,
+        threshold: genPhase.thresholdWei,
+        commitment: genPhase.commitmentHex,
+        userTag: genPhase.userTag,
+        userTagLabel: genPhase.userTagLabel,
+      });
+
+      // Upload proof to Vercel Blob
+      const blobResp = await fetch("/api/proof/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          proof: proofPayload,
+        }),
+      });
+
+      if (!blobResp.ok) {
+        throw new Error(`Blob upload failed: ${blobResp.status}`);
+      }
+
+      const { claimId, blobUrl } = await blobResp.json() as { claimId: string; blobUrl: string };
+
+      // Save metadata to Upstash Redis
+      const meta = buildShareMetaForRegister({
+        token: genPhase.token,
+        thresholdWei: genPhase.thresholdWei,
+        blockNumber: genPhase.blockNumber,
+        blockTimestamp: genPhase.blockTimestamp,
+        chainId: genPhase.chainId,
+        userTagLabel: genPhase.userTagLabel,
+      });
+
+      const regResp = await fetch("/api/share/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          claimId,
+          blobUrl,
+          meta,
+        }),
+      });
+
+      if (!regResp.ok) {
+        throw new Error(`Registration failed: ${regResp.status}`);
+      }
+
+      const shareUrl = `/share/${claimId}`;
+      setGenPhase(prev =>
+        prev.status === "done"
+          ? { ...prev, shareUrl, uploading: false }
+          : prev
+      );
+    } catch (err) {
+      setGenPhase(prev =>
+        prev.status === "done"
+          ? { ...prev, uploading: false }
+          : prev
+      );
+      alert("上传失败: " + (err as Error).message);
+    }
   };
 
   // ── Verify (shared between file-upload and generated proof) ──────────────
@@ -298,6 +391,10 @@ function ProofApp() {
                   onChangeUserTagLabel={setUserTagLabel}
                   customRpcUrl={customRpcUrl}
                   onChangeCustomRpcUrl={setCustomRpcUrl}
+                  customBlockNumber={customBlockNumber}
+                  onChangeCustomBlockNumber={setCustomBlockNumber}
+                  enableAutoUpload={enableAutoUpload}
+                  onChangeEnableAutoUpload={setEnableAutoUpload}
                   selectedToken={selectedToken}
                   onChangeSelectedToken={setSelectedToken}
                   onProve={handleProve}
@@ -307,7 +404,13 @@ function ProofApp() {
                 <ProvingView pct={genPhase.pct} msg={genPhase.msg} />
               )}
               {genPhase.status === "done" && (
-                <DoneView phase={genPhase} onReset={handleGenReset} onDownload={handleDownload} onVerify={handleVerifyGenerated} />
+                <DoneView 
+                  phase={genPhase} 
+                  onReset={handleGenReset} 
+                  onDownload={handleDownload} 
+                  onUpload={handleUpload}
+                  onVerify={handleVerifyGenerated}
+                />
               )}
               {genPhase.status === "error" && (
                 <ErrorView message={genPhase.message} onReset={handleGenReset} />
@@ -337,6 +440,10 @@ function IdleForm({
   onChangeUserTagLabel,
   customRpcUrl,
   onChangeCustomRpcUrl,
+  customBlockNumber,
+  onChangeCustomBlockNumber,
+  enableAutoUpload,
+  onChangeEnableAutoUpload,
   selectedToken,
   onChangeSelectedToken,
   onProve,
@@ -347,6 +454,10 @@ function IdleForm({
   onChangeUserTagLabel: (v: string) => void;
   customRpcUrl: string;
   onChangeCustomRpcUrl: (v: string) => void;
+  customBlockNumber: string;
+  onChangeCustomBlockNumber: (v: string) => void;
+  enableAutoUpload: boolean;
+  onChangeEnableAutoUpload: (v: boolean) => void;
   selectedToken: string;
   onChangeSelectedToken: (v: string) => void;
   onProve: () => void;
@@ -412,6 +523,19 @@ function IdleForm({
         <p className="text-zinc-500 text-xs">
           标签会被包含在证明里并公开显示——转发证明的人无法伪装拥有你的标签
         </p>
+        <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700">
+          <input
+            type="checkbox"
+            id="auto-upload"
+            checked={enableAutoUpload}
+            onChange={(e) => onChangeEnableAutoUpload(e.target.checked)}
+            className="w-4 h-4 rounded cursor-pointer"
+          />
+          <label htmlFor="auto-upload" className="flex-1 cursor-pointer">
+            <p className="text-xs font-medium text-zinc-300">生成后自动上传并分享</p>
+            <p className="text-xs text-zinc-600 mt-0.5">证明生成完成后自动上传到云端，获得分享链接</p>
+          </label>
+        </div>
       </div>
       <p className="text-zinc-500 text-xs">
         {token ? "ERC20 证明含两次 MPT 验证，约需 60–120 秒，请保持页面开启" : "证明生成约需 40–90 秒，期间请保持页面开启"}
@@ -428,22 +552,40 @@ function IdleForm({
           <span className="font-mono">{showAdvanced ? "▲" : "▼"}</span>
         </button>
         {showAdvanced && (
-          <div className="px-4 pb-4 pt-1 space-y-2 border-t border-zinc-800">
-            <label className="block text-xs font-medium text-zinc-400">
-              自定义 RPC URL&nbsp;
-              <span className="text-zinc-600 font-normal">(留空则使用公共节点)</span>
-            </label>
-            <input
-              type="url"
-              value={customRpcUrl}
-              onChange={(e) => onChangeCustomRpcUrl(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-zinc-600"
-              placeholder="https://mainnet.infura.io/v3/YOUR_KEY"
-            />
-            <p className="text-zinc-600 text-xs leading-relaxed">
-              使用自己的节点或 Alchemy / Infura 私钥可提升隐私性，并支持历史归档数据。
-              填写后将优先使用此节点，失败则自动回退到公共节点。
-            </p>
+          <div className="px-4 pb-4 pt-1 space-y-3 border-t border-zinc-800">
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                块号 <span className="text-zinc-600 font-normal">(留空则使用最新块)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={customBlockNumber}
+                onChange={(e) => onChangeCustomBlockNumber(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-zinc-600"
+                placeholder="例：20000000（留空则自动用当前块）"
+              />
+              <p className="text-zinc-600 text-xs mt-1">
+                用于为过往某个块生成证明。需要提供能访问历史数据的 RPC 节点。
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                自定义 RPC URL&nbsp;
+                <span className="text-zinc-600 font-normal">(留空则使用公共节点)</span>
+              </label>
+              <input
+                type="url"
+                value={customRpcUrl}
+                onChange={(e) => onChangeCustomRpcUrl(e.target.value)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-100 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500 placeholder:text-zinc-600"
+                placeholder="https://mainnet.infura.io/v3/YOUR_KEY"
+              />
+              <p className="text-zinc-600 text-xs mt-1">
+                使用自己的节点或 Alchemy / Infura 私钥可提升隐私性，并支持历史归档数据。
+                填写后将优先使用此节点，失败则自动回退到公共节点。
+              </p>
+            </div>
           </div>
         )}
       </div>
@@ -490,11 +632,13 @@ function DoneView({
   phase,
   onReset,
   onDownload,
+  onUpload,
   onVerify,
 }: {
   phase: Extract<GenPhase, { status: "done" }>;
   onReset: () => void;
   onDownload: () => void;
+  onUpload: () => void;
   onVerify: () => void;
 }) {
   const symbol = phase.token?.symbol ?? "ETH";
@@ -532,6 +676,17 @@ function DoneView({
           下载 .proof
         </button>
         <button
+          onClick={onUpload}
+          disabled={phase.uploading || !!phase.shareUrl}
+          className={`flex-1 py-2.5 rounded-xl font-medium text-sm transition-colors ${
+            phase.uploading || phase.shareUrl
+              ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+              : "bg-emerald-600 hover:bg-emerald-500"
+          }`}
+        >
+          {phase.uploading ? "上传中..." : phase.shareUrl ? "✓ 已上传" : "上传并分享"}
+        </button>
+        <button
           onClick={onVerify}
           className="flex-1 py-2.5 rounded-xl bg-zinc-700 hover:bg-zinc-600 font-medium text-sm transition-colors"
         >
@@ -544,6 +699,28 @@ function DoneView({
           重置
         </button>
       </div>
+      {phase.shareUrl && (
+        <div className="bg-emerald-950/50 border border-emerald-700/40 rounded-xl p-4 space-y-2">
+          <p className="text-emerald-400 text-sm font-medium">分享链接已生成</p>
+          <div className="flex gap-2 items-center">
+            <code className="flex-1 bg-zinc-800 px-3 py-2 rounded text-xs font-mono text-zinc-300 break-all">
+              {typeof window !== "undefined" ? `${window.location.origin}${phase.shareUrl}` : phase.shareUrl}
+            </code>
+            <button
+              onClick={() => {
+                const url = typeof window !== "undefined" ? `${window.location.origin}${phase.shareUrl!}` : phase.shareUrl!;
+                navigator.clipboard.writeText(url);
+              }}
+              className="px-3 py-2 rounded bg-zinc-700 hover:bg-zinc-600 text-xs font-medium transition-colors"
+            >
+              复制
+            </button>
+          </div>
+          <p className="text-zinc-500 text-xs">
+            任何人可以通过此链接验证你的证明，无需知道你的地址或余额。
+          </p>
+        </div>
+      )}
     </div>
   );
 }

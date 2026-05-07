@@ -59,6 +59,7 @@ export default async function SharePage({
   params: Promise<{ claimId: string }>;
 }) {
   const { claimId } = await params;
+  
   if (!CLAIM_ID_RE.test(claimId)) notFound();
 
   const rec = await getClaimRecord(claimId);

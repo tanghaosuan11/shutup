@@ -119,6 +119,7 @@ export async function fetchWalletData(
   thresholdWei: bigint,
   userTagLabel: string,
   customRpcUrl?: string,
+  customBlockNumber?: string,
   onProgress?: ProgressCallback
 ): Promise<WalletData> {
   const progress = (pct: number, msg: string) => {
@@ -184,9 +185,22 @@ export async function fetchWalletData(
   }
   if (!dataProvider) throw new Error("所有 RPC 均不可用，请检查网络或更换自定义 RPC。");
 
-  // Get block number then fire both in parallel for the same block.
+  // Determine which block to use: custom or latest
+  let blockNumberHex: string;
+  if (customBlockNumber && customBlockNumber.trim()) {
+    // Validate and convert custom block number to hex
+    const blockNum = parseInt(customBlockNumber.trim(), 10);
+    if (isNaN(blockNum) || blockNum < 0) {
+      throw new Error("块号必须是非负整数");
+    }
+    blockNumberHex = "0x" + blockNum.toString(16);
+  } else {
+    // Get latest block
+    blockNumberHex = await dataProvider.send("eth_blockNumber", []);
+  }
+
+  // Get block then fire both in parallel for the same block.
   progress(12, "Fetching block + account proof...");
-  const blockNumberHex: string = await dataProvider.send("eth_blockNumber", []);
   const [block, proofResponse] = await Promise.all([
     dataProvider.getBlock(blockNumberHex),
     dataProvider.send("eth_getProof", [address, [], blockNumberHex]),
@@ -251,6 +265,7 @@ export async function fetchWalletDataERC20(
   thresholdWei: bigint,
   userTagLabel: string,
   customRpcUrl?: string,
+  customBlockNumber?: string,
   onProgress?: ProgressCallback
 ): Promise<WalletData> {
   const progress = (pct: number, msg: string) => {
@@ -302,7 +317,20 @@ export async function fetchWalletDataERC20(
   );
 
   progress(12, `Fetching block + ${token.symbol} storage proof...`);
-  const blockNumberHex: string = await dataProvider.send("eth_blockNumber", []);
+  // Determine which block to use: custom or latest
+  let blockNumberHex: string;
+  if (customBlockNumber && customBlockNumber.trim()) {
+    // Validate and convert custom block number to hex
+    const blockNum = parseInt(customBlockNumber.trim(), 10);
+    if (isNaN(blockNum) || blockNum < 0) {
+      throw new Error("块号必须是非负整数");
+    }
+    blockNumberHex = "0x" + blockNum.toString(16);
+  } else {
+    // Get latest block
+    blockNumberHex = await dataProvider.send("eth_blockNumber", []);
+  }
+
   const [block, proofResponse] = await Promise.all([
     dataProvider.getBlock(blockNumberHex),
     // eth_getProof for the TOKEN CONTRACT with the storage key

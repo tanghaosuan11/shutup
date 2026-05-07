@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import MiniCssExtractPlugin from "mini-css-extract-plugin";
 
 const nextConfig: NextConfig = {
   // bb.js relies on SharedArrayBuffer — these headers are required in all browsers
@@ -24,14 +23,8 @@ const nextConfig: NextConfig = {
   // Run `next dev --webpack` / `next build --webpack` to use this (Turbopack cannot handle WASM).
   webpack(config) {
     config.experiments = { ...config.experiments, asyncWebAssembly: true };
-    // Required when any rule uses `MiniCssExtractPlugin.loader` (see mini-css-extract-plugin getting started).
-    const hasMiniCss = config.plugins?.some(
-      (p: unknown) => p instanceof MiniCssExtractPlugin
-    );
-    if (!hasMiniCss) {
-      config.plugins = config.plugins ?? [];
-      config.plugins.push(new MiniCssExtractPlugin());
-    }
+    // Note: CSS extraction is handled automatically by Next.js 13+
+    // Do not add MiniCssExtractPlugin as it conflicts with Next.js's built-in CSS handling
     return config;
   },
 };

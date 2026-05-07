@@ -18,12 +18,30 @@ export function getRedis(): Redis | null {
 
 export async function getClaimRecord(claimId: string): Promise<ClaimRecord | null> {
   const redis = getRedis();
-  if (!redis) return null;
-  const raw = await redis.get<string>(`wealth-proof:v1:claim:${claimId}`);
-  if (raw == null) return null;
+  if (!redis) {
+    console.error("[claim-redis] Redis not configured");
+    return null;
+  }
+  const key = `claim:${claimId}`;
   try {
-    return JSON.parse(raw) as ClaimRecord;
-  } catch {
+    const raw = await redis.get<string | ClaimRecord>(key);
+    
+    if (raw == null) {
+      return null;
+    }
+    
+    // Upstash Redis SDK may return already-parsed objects or strings
+    if (typeof raw === 'object') {
+      return raw as ClaimRecord;
+    }
+    
+    if (typeof raw === 'string') {
+      return JSON.parse(raw) as ClaimRecord;
+    }
+    
+    return null;
+  } catch (err) {
+    console.error(`[claim-redis] Error processing key ${key}:`, err);
     return null;
   }
 }
