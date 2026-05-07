@@ -8,7 +8,6 @@
 
 // SSR-safe imports only at module level
 import type { InputMap } from "@noir-lang/noir_js";
-import type { CompiledCircuit } from "@noir-lang/types";
 import { BrowserProvider, JsonRpcProvider, SigningKey, getAddress, getBytes, verifyTypedData, TypedDataEncoder } from "ethers";
 import * as ethers from "ethers";
 import { decode as rlpDecode } from "@ethereumjs/rlp";
@@ -387,7 +386,7 @@ export async function fetchWalletDataERC20(
  * WASM libs are loaded dynamically to avoid SSR evaluation.
  */
 export async function generateProofFromData(
-  circuit: CompiledCircuit,
+  circuit: any,
   walletData: WalletData,
   thresholdWei: bigint,
   onProgress?: ProgressCallback
@@ -492,7 +491,7 @@ export async function generateProofFromData(
  * Runs the ERC20 Noir circuit (circuit_erc20.json) with both state + storage proofs.
  */
 export async function generateProofFromDataERC20(
-  circuit: CompiledCircuit,
+  circuit: any,
   walletData: WalletData,
   thresholdWei: bigint,
   onProgress?: ProgressCallback
@@ -727,7 +726,7 @@ function hexToU8Array(hex: string, len: number): Uint8Array {
  * Worker-safe — no window access required.
  */
 export async function verifyProofData(
-  circuit: CompiledCircuit,
+  circuit: any,
   proof: Uint8Array,
   publicInputs: string[],
   onProgress?: ProgressCallback
@@ -755,7 +754,7 @@ export async function verifyProofData(
  * ERC20 proof verifier — uses 2^22 SRS for the larger circuit.
  */
 export async function verifyProofDataERC20(
-  circuit: CompiledCircuit,
+  circuit: any,
   proof: Uint8Array,
   publicInputs: string[],
   onProgress?: ProgressCallback
